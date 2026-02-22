@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>LoveVerse Invite</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #fff4ec;
+        color: #2f1a2a;
+      }
+      .wrap {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #f1d6cb;
+        border-radius: 16px;
+        padding: 20px;
+      }
+      h1 { margin: 0 0 8px; }
+      p { line-height: 1.5; }
+      .code {
+        display: inline-block;
+        padding: 8px 12px;
+        border-radius: 10px;
+        background: #fff8f4;
+        border: 1px solid #f1d6cb;
+        font-weight: bold;
+      }
+      .btn {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 11px 16px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .primary { background: #cc3f71; color: #fff; }
+      .secondary {
+        margin-left: 8px;
+        background: #fff;
+        color: #2f1a2a;
+        border: 1px solid #f1d6cb;
+      }
+      small { color: #7f5b69; display: block; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>LoveVerse Invite</h1>
+        <p>Open the app to join with this invite code:</p>
+        <div class="code" id="code">-</div>
+        <div>
+          <a class="btn primary" id="openApp" href="#">Open In App</a>
+          <a class="btn secondary" id="downloadApk" href="#">Download APK</a>
+        </div>
+        <small>If app does not open, install APK and enter invite code manually.</small>
+      </div>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const code = (params.get("code") || "").toUpperCase().trim();
+
+      // Replace this with your actual hosted APK URL.
+      const apkUrl = "https://expo.dev/artifacts/eas/oPzWsZ61qx7LByWkfmTYax.apk";
+      const appUrl = `loveverse://invite/${encodeURIComponent(code)}`;
+
+      document.getElementById("code").textContent = code || "N/A";
+      document.getElementById("openApp").href = appUrl;
+      document.getElementById("downloadApk").href = apkUrl;
+
+      // Try opening the app quickly, then keep APK button available.
+      if (code) {
+        setTimeout(() => {
+          window.location.href = appUrl;
+        }, 350);
+      }
+    </script>
+  </body>
+</html>
+

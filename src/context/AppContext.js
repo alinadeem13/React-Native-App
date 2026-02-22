@@ -1,0 +1,213 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { createContext, useEffect, useMemo, useState } from "react";
+import {
+  acceptPartnerInvite,
+  createPartnerInvite,
+  deletePlanRecord,
+  fetchChallenges,
+  fetchNotes,
+  fetchPlans,
+  fetchProfile,
+  fetchPublicProfile,
+  saveProfile,
+  upsertChallenge,
+  upsertNote,
+  upsertPlan
+} from "../firebase/services";
+import { challengeSeed, starterMemories } from "../utils/mockData";
+
+function buildDefaultState() {
+  return {
+    profile: {
+      yourName: "Ali",
+      partnerName: "My Love",
+      anniversary: "2022-01-15",
+      coupleId: null,
+      partnerUserId: null,
+      onboardingSeen: false
+    },
+    notes: [],
+    memories: starterMemories,
+    plans: [],
+    challenges: challengeSeed.map((c) => ({ ...c, done: false })),
+    partner: null
+  };
+}
+
+export const AppContext = createContext(null);
+
+export function AppProvider({ children, userId }) {
+  const [state, setState] = useState(buildDefaultState());
+  const [hydrated, setHydrated] = useState(false);
+  const [ownerId, setOwnerId] = useState(null);
+  const [storageKey, setStorageKey] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const resolvedOwner = userId || "guest";
+      const key = `loveverse_state_${resolvedOwner}`;
+
+      if (!active) return;
+      setHydrated(false);
+      setOwnerId(resolvedOwner);
+      setStorageKey(key);
+      setState(buildDefaultState());
+
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        const localState = raw ? JSON.parse(raw) : buildDefaultState();
+
+        let cloudProfile = null;
+        let cloudNotes = [];
+        let cloudPlans = [];
+        let cloudChallenges = [];
+
+        try {
+          [cloudProfile, cloudNotes, cloudPlans, cloudChallenges] = await Promise.all([
+            fetchProfile(resolvedOwner),
+            fetchNotes(resolvedOwner),
+            fetchPlans(resolvedOwner),
+            fetchChallenges(resolvedOwner)
+          ]);
+        } catch {
+          // Allow offline mode or restrictive Firestore rules.
+        }
+
+        if (!active) return;
+
+        const baseChallenges = localState.challenges?.length
+          ? localState.challenges
+          : buildDefaultState().challenges;
+
+        const mergedChallenges = baseChallenges.map((localChallenge) => {
+          const cloudChallenge = cloudChallenges.find((c) => c.challengeId === localChallenge.id);
+          return cloudChallenge ? { ...localChallenge, done: !!cloudChallenge.done } : localChallenge;
+        });
+
+        const mergedProfile = cloudProfile
+          ? { ...localState.profile, ...cloudProfile }
+          : localState.profile;
+
+        let partner = null;
+        if (mergedProfile.partnerUserId) {
+          partner = await fetchPublicProfile(mergedProfile.partnerUserId).catch(() => null);
+        }
+
+        setState({
+          ...localState,
+          profile: mergedProfile,
+          notes: cloudNotes.length ? cloudNotes : localState.notes,
+          plans: cloudPlans.length ? cloudPlans : localState.plans,
+          challenges: mergedChallenges,
+          partner
+        });
+      } finally {
+        if (active) setHydrated(true);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!hydrated || !storageKey) return;
+    AsyncStorage.setItem(storageKey, JSON.stringify(state));
+  }, [state, hydrated, storageKey]);
+
+  const actions = useMemo(
+    () => ({
+      addNote: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+
+        const item = { id: String(Date.now()), text: trimmed, createdAt: Date.now() };
+        setState((prev) => ({ ...prev, notes: [item, ...prev.notes] }));
+
+        if (ownerId) upsertNote(ownerId, item).catch(() => {});
+      },
+      addPlan: (title) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+
+        let newItem = null;
+        setState((prev) => {
+          const alreadyExists = prev.plans.some(
+            (plan) => plan.title.trim().toLowerCase() === trimmed.toLowerCase()
+          );
+          if (alreadyExists) return prev;
+
+          newItem = { id: String(Date.now()), title: trimmed, createdAt: Date.now() };
+          return { ...prev, plans: [newItem, ...prev.plans] };
+        });
+
+        if (ownerId && newItem) upsertPlan(ownerId, newItem).catch(() => {});
+      },
+      deletePlan: (id) => {
+        setState((prev) => ({
+          ...prev,
+          plans: prev.plans.filter((plan) => plan.id !== id)
+        }));
+
+        if (ownerId) deletePlanRecord(ownerId, id).catch(() => {});
+      },
+      toggleChallenge: (id) => {
+        let updated = null;
+
+        setState((prev) => {
+          const nextChallenges = prev.challenges.map((c) => {
+            if (c.id !== id) return c;
+            updated = { ...c, done: !c.done };
+            return updated;
+          });
+
+          return { ...prev, challenges: nextChallenges };
+        });
+
+        if (ownerId && updated) upsertChallenge(ownerId, updated).catch(() => {});
+      },
+      updateProfile: (patch) => {
+        setState((prev) => {
+          const nextProfile = { ...prev.profile, ...patch };
+          if (ownerId) saveProfile(ownerId, nextProfile).catch(() => {});
+          return { ...prev, profile: nextProfile };
+        });
+      },
+      markPartnerOnboardingSeen: () => {
+        setState((prev) => {
+          const nextProfile = { ...prev.profile, onboardingSeen: true };
+          if (ownerId) saveProfile(ownerId, nextProfile).catch(() => {});
+          return { ...prev, profile: nextProfile };
+        });
+      },
+      createInviteCode: async () => {
+        if (!ownerId) throw new Error("User not available.");
+        return createPartnerInvite(ownerId);
+      },
+      joinByInviteCode: async (code) => {
+        if (!ownerId) throw new Error("User not available.");
+
+        const result = await acceptPartnerInvite(code, ownerId);
+        const partner = await fetchPublicProfile(result.partnerUserId).catch(() => null);
+
+        setState((prev) => {
+          const nextProfile = {
+            ...prev.profile,
+            coupleId: result.coupleId,
+            partnerUserId: result.partnerUserId,
+            onboardingSeen: true
+          };
+          return { ...prev, profile: nextProfile, partner };
+        });
+
+        return result;
+      }
+    }),
+    [ownerId]
+  );
+
+  return <AppContext.Provider value={{ state, actions, hydrated }}>{children}</AppContext.Provider>;
+}

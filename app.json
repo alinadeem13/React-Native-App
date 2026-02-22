@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "LoveVerse",
+    "slug": "loveverse-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "loveverse",
+    "splash": {
+      "backgroundColor": "#fff4ec",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourname.loveverse"
+    },
+    "android": {
+      "package": "com.ali.myreactnativeapp",
+      "adaptiveIcon": {
+        "backgroundColor": "#fff4ec"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2f62954b-39bf-4d49-a97b-56d619a17be9"
+      }
+    }
+  }
+}
