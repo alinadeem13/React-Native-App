@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState } from "react";
 import { SafeAreaView, StyleSheet, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import { onAuthStateChanged } from "firebase/auth";
 import { AppProvider, AppContext } from "./context/AppContext";
 import RootNavigator from "./navigation/RootNavigator";
@@ -51,6 +52,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <StatusBar hidden />
       {checkingAuth ? (
         <View style={styles.safe} />
       ) : user ? (

@@ -44,6 +44,7 @@ export async function fetchProfile(ownerId) {
     yourName: data.yourName,
     partnerName: data.partnerName,
     anniversary: data.anniversary,
+    moodLog: data.moodLog || {},
     coupleId: data.coupleId || null,
     partnerUserId: data.partnerUserId || null,
     onboardingSeen: data.onboardingSeen ?? false
@@ -198,6 +199,7 @@ export async function upsertChallenge(ownerId, challenge) {
     description: challenge.description,
     points: challenge.points,
     done: challenge.done,
+    completedAt: challenge.completedAt || null,
     updatedAt: Date.now()
   });
 }

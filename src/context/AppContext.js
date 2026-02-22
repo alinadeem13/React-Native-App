@@ -47,6 +47,7 @@ function buildDefaultState() {
       yourName: "Ali",
       partnerName: "My Love",
       anniversary: "2022-01-15",
+      moodLog: {},
       coupleId: null,
       partnerUserId: null,
       onboardingSeen: false
@@ -110,7 +111,13 @@ export function AppProvider({ children, userId }) {
 
         const mergedChallenges = baseChallenges.map((localChallenge) => {
           const cloudChallenge = cloudChallenges.find((c) => c.challengeId === localChallenge.id);
-          return cloudChallenge ? { ...localChallenge, done: !!cloudChallenge.done } : localChallenge;
+          return cloudChallenge
+            ? {
+                ...localChallenge,
+                done: !!cloudChallenge.done,
+                completedAt: cloudChallenge.completedAt || null
+              }
+            : localChallenge;
         });
 
         const mergedProfile = cloudProfile
@@ -239,7 +246,8 @@ export function AppProvider({ children, userId }) {
         if (ownerId && updatedMemory) upsertMemory(ownerId, updatedMemory).catch(() => {});
       },
       addPlan: (title) => {
-        const trimmed = title.trim();
+        const titleValue = typeof title === "string" ? title : title?.title || "";
+        const trimmed = titleValue.trim();
         if (!trimmed) return;
 
         let newItem = null;
@@ -249,7 +257,17 @@ export function AppProvider({ children, userId }) {
           );
           if (alreadyExists) return prev;
 
-          newItem = { id: String(Date.now()), title: trimmed, createdAt: Date.now() };
+          newItem = {
+            id: String(Date.now()),
+            title: trimmed,
+            createdAt: Date.now(),
+            plannedFor:
+              typeof title === "string" ? null : title?.plannedFor || null,
+            plannedForMs:
+              typeof title === "string" || !title?.plannedFor
+                ? null
+                : new Date(`${title.plannedFor}T00:00:00`).getTime()
+          };
           return { ...prev, plans: [newItem, ...prev.plans] };
         });
 
@@ -269,7 +287,12 @@ export function AppProvider({ children, userId }) {
         setState((prev) => {
           const nextChallenges = prev.challenges.map((c) => {
             if (c.id !== id) return c;
-            updated = { ...c, done: !c.done };
+            const nextDone = !c.done;
+            updated = {
+              ...c,
+              done: nextDone,
+              completedAt: nextDone ? Date.now() : null
+            };
             return updated;
           });
 

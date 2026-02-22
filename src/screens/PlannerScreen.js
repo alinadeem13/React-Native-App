@@ -1,9 +1,23 @@
 import React, { useContext, useRef, useState } from "react";
 import { Animated, FlatList, PanResponder, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import { AppContext } from "../context/AppContext";
 import { colors } from "../theme/colors";
 import { dateIdeas } from "../utils/mockData";
+
+function formatDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseDateOrFallback(value) {
+  const d = new Date(`${value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
 
 function SwipePlanItem({ item, onDelete }) {
   const maxSwipe = 120;
@@ -54,6 +68,7 @@ function SwipePlanItem({ item, onDelete }) {
 
       <Animated.View style={[styles.planItem, { transform: [{ translateX }] }]} {...panResponder.panHandlers}>
         <Text style={styles.planText}>{item.title}</Text>
+        {!!item.plannedFor && <Text style={styles.planDate}>Date: {item.plannedFor}</Text>}
       </Animated.View>
     </View>
   );
@@ -62,15 +77,74 @@ function SwipePlanItem({ item, onDelete }) {
 export default function PlannerScreen() {
   const { state, actions } = useContext(AppContext);
   const [customPlan, setCustomPlan] = useState("");
+  const [planDate, setPlanDate] = useState("");
+  const [pickerDate, setPickerDate] = useState(new Date());
+  const [showPlanDatePicker, setShowPlanDatePicker] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const sortedPlans = [...state.plans].sort((a, b) => {
+    const aHas = typeof a.plannedForMs === "number";
+    const bHas = typeof b.plannedForMs === "number";
+    if (aHas && bHas) return a.plannedForMs - b.plannedForMs;
+    if (aHas) return -1;
+    if (bHas) return 1;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+
+  const onPlanDateChange = (event, selectedDate) => {
+    if (!event || event.type === "dismissed") {
+      setShowPlanDatePicker(false);
+      return;
+    }
+    if (!selectedDate) return;
+
+    setPickerDate(selectedDate);
+    setPlanDate(formatDate(selectedDate));
+    setShowPlanDatePicker(false);
+  };
+
+  const addPlanWithDate = (title) => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setStatus("Plan title is required.");
+      return;
+    }
+    if (!planDate) {
+      setStatus("Plan date is required.");
+      return;
+    }
+
+    actions.addPlan({ title: trimmed, plannedFor: planDate });
+    setStatus("Plan saved.");
+  };
 
   return (
     <View style={styles.container}>
       <Card title="Date Planner" subtitle="Pick random ideas or add your own.">
+        <Pressable
+          style={styles.datePickerBtn}
+          onPress={() => {
+            setPickerDate(planDate ? parseDateOrFallback(planDate) : new Date());
+            setShowPlanDatePicker(true);
+          }}
+        >
+          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          <Text style={styles.datePickerText}>{planDate || "Pick plan date"}</Text>
+        </Pressable>
+        {showPlanDatePicker && (
+          <DateTimePicker
+            value={pickerDate}
+            mode="date"
+            display="calendar"
+            onChange={onPlanDateChange}
+          />
+        )}
+
         <FlatList
           data={dateIdeas}
           keyExtractor={(item) => item}
           renderItem={({ item }) => (
-            <Pressable style={styles.idea} onPress={() => actions.addPlan(item)}>
+            <Pressable style={styles.idea} onPress={() => addPlanWithDate(item)}>
               <Text style={styles.ideaText}>+ {item}</Text>
             </Pressable>
           )}
@@ -88,16 +162,18 @@ export default function PlannerScreen() {
         <Pressable
           style={styles.btn}
           onPress={() => {
-            actions.addPlan(customPlan);
-            setCustomPlan("");
+            const before = customPlan;
+            addPlanWithDate(customPlan);
+            if (before.trim() && planDate) setCustomPlan("");
           }}
         >
           <Text style={styles.btnText}>Save Plan</Text>
         </Pressable>
+        {!!status && <Text style={styles.status}>{status}</Text>}
       </Card>
 
       <FlatList
-        data={state.plans}
+        data={sortedPlans}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <SwipePlanItem item={item} onDelete={actions.deletePlan} />}
         ListEmptyComponent={<Text style={styles.empty}>No plans yet.</Text>}
@@ -116,6 +192,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: "#fff"
   },
+  datePickerBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  datePickerText: { color: colors.text, fontWeight: "700", flex: 1 },
   ideaText: { color: colors.text, fontWeight: "600" },
   input: {
     borderWidth: 1,
@@ -147,5 +236,7 @@ const styles = StyleSheet.create({
     padding: 12
   },
   planText: { color: colors.text, fontWeight: "600" },
+  planDate: { marginTop: 4, color: colors.muted, fontSize: 12 },
+  status: { marginTop: 8, color: colors.success, fontWeight: "700" },
   empty: { textAlign: "center", color: colors.muted }
 });
