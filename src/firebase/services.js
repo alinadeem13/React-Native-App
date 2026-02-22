@@ -207,3 +207,22 @@ export async function fetchChallenges(ownerId) {
   const snapshot = await getDocs(q);
   return snapshot.docs.map((d) => d.data());
 }
+
+export async function upsertMemory(ownerId, memory) {
+  await setDoc(doc(db, "memories", scopedId(ownerId, memory.id)), {
+    ownerId,
+    ...memory
+  });
+}
+
+export async function deleteMemoryRecord(ownerId, memoryId) {
+  await deleteDoc(doc(db, "memories", scopedId(ownerId, memoryId)));
+}
+
+export async function fetchMemories(ownerId) {
+  const q = query(collection(db, "memories"), where("ownerId", "==", ownerId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs
+    .map((d) => ({ id: d.data().id, ...d.data() }))
+    .sort((a, b) => (b.dateMs || b.createdAt || 0) - (a.dateMs || a.createdAt || 0));
+}

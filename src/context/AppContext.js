@@ -2,19 +2,44 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useEffect, useMemo, useState } from "react";
 import {
   acceptPartnerInvite,
+  deleteMemoryRecord,
   createPartnerInvite,
   deletePlanRecord,
   fetchChallenges,
+  fetchMemories,
   fetchNotes,
   fetchPlans,
   fetchProfile,
   fetchPublicProfile,
+  upsertMemory,
   saveProfile,
   upsertChallenge,
   upsertNote,
   upsertPlan
 } from "../firebase/services";
 import { challengeSeed, starterMemories } from "../utils/mockData";
+
+function normalizeMemory(memory) {
+  const dateText = memory.dateText || new Date(memory.createdAt || Date.now()).toISOString().slice(0, 10);
+  const parsedDate = new Date(dateText);
+  const dateMs = Number.isNaN(parsedDate.getTime()) ? Date.now() : parsedDate.getTime();
+
+  return {
+    id: memory.id || String(Date.now()),
+    title: memory.title || "Untitled Memory",
+    details: memory.details || "",
+    category: memory.category || "Special",
+    mood: memory.mood || "Happy",
+    dateText,
+    dateMs,
+    createdAt: memory.createdAt || Date.now(),
+    reactions: {
+      heart: memory.reactions?.heart || 0,
+      laugh: memory.reactions?.laugh || 0,
+      wow: memory.reactions?.wow || 0
+    }
+  };
+}
 
 function buildDefaultState() {
   return {
@@ -27,7 +52,7 @@ function buildDefaultState() {
       onboardingSeen: false
     },
     notes: [],
-    memories: starterMemories,
+    memories: starterMemories.map((memory) => normalizeMemory(memory)),
     plans: [],
     challenges: challengeSeed.map((c) => ({ ...c, done: false })),
     partner: null
@@ -63,13 +88,15 @@ export function AppProvider({ children, userId }) {
         let cloudNotes = [];
         let cloudPlans = [];
         let cloudChallenges = [];
+        let cloudMemories = [];
 
         try {
-          [cloudProfile, cloudNotes, cloudPlans, cloudChallenges] = await Promise.all([
+          [cloudProfile, cloudNotes, cloudPlans, cloudChallenges, cloudMemories] = await Promise.all([
             fetchProfile(resolvedOwner),
             fetchNotes(resolvedOwner),
             fetchPlans(resolvedOwner),
-            fetchChallenges(resolvedOwner)
+            fetchChallenges(resolvedOwner),
+            fetchMemories(resolvedOwner)
           ]);
         } catch {
           // Allow offline mode or restrictive Firestore rules.
@@ -90,6 +117,11 @@ export function AppProvider({ children, userId }) {
           ? { ...localState.profile, ...cloudProfile }
           : localState.profile;
 
+        const normalizedLocalMemories = (localState.memories || []).map((memory) =>
+          normalizeMemory(memory)
+        );
+        const normalizedCloudMemories = cloudMemories.map((memory) => normalizeMemory(memory));
+
         let partner = null;
         if (mergedProfile.partnerUserId) {
           partner = await fetchPublicProfile(mergedProfile.partnerUserId).catch(() => null);
@@ -100,6 +132,7 @@ export function AppProvider({ children, userId }) {
           profile: mergedProfile,
           notes: cloudNotes.length ? cloudNotes : localState.notes,
           plans: cloudPlans.length ? cloudPlans : localState.plans,
+          memories: normalizedCloudMemories.length ? normalizedCloudMemories : normalizedLocalMemories,
           challenges: mergedChallenges,
           partner
         });
@@ -128,6 +161,82 @@ export function AppProvider({ children, userId }) {
         setState((prev) => ({ ...prev, notes: [item, ...prev.notes] }));
 
         if (ownerId) upsertNote(ownerId, item).catch(() => {});
+      },
+      addMemory: (payload) => {
+        const title = payload?.title?.trim();
+        if (!title) return { ok: false, reason: "title_required" };
+
+        const details = (payload?.details || "").trim();
+        const category = payload?.category || "Special";
+        const mood = payload?.mood || "Happy";
+        const dateText = payload?.dateText || new Date().toISOString().slice(0, 10);
+        const dateValue = new Date(dateText);
+
+        if (Number.isNaN(dateValue.getTime())) {
+          return { ok: false, reason: "invalid_date" };
+        }
+
+        const item = normalizeMemory({
+          id: String(Date.now()),
+          title,
+          details,
+          category,
+          mood,
+          dateText,
+          dateMs: dateValue.getTime(),
+          createdAt: Date.now(),
+          reactions: { heart: 0, laugh: 0, wow: 0 }
+        });
+
+        setState((prev) => {
+          const exists = prev.memories.some(
+            (m) =>
+              m.title.trim().toLowerCase() === title.toLowerCase() &&
+              m.dateText === dateText &&
+              m.details.trim().toLowerCase() === details.toLowerCase()
+          );
+          if (exists) return prev;
+
+          const nextMemories = [item, ...prev.memories].sort(
+            (a, b) => (b.dateMs || b.createdAt || 0) - (a.dateMs || a.createdAt || 0)
+          );
+          return { ...prev, memories: nextMemories };
+        });
+
+        if (ownerId) upsertMemory(ownerId, item).catch(() => {});
+        return { ok: true, item };
+      },
+      deleteMemory: (id) => {
+        setState((prev) => ({
+          ...prev,
+          memories: prev.memories.filter((memory) => memory.id !== id)
+        }));
+        if (ownerId) deleteMemoryRecord(ownerId, id).catch(() => {});
+      },
+      reactToMemory: (id, reactionKey) => {
+        const allowed = ["heart", "laugh", "wow"];
+        if (!allowed.includes(reactionKey)) return;
+
+        let updatedMemory = null;
+        setState((prev) => {
+          const nextMemories = prev.memories.map((memory) => {
+            if (memory.id !== id) return memory;
+            const next = {
+              ...memory,
+              reactions: {
+                heart: memory.reactions?.heart || 0,
+                laugh: memory.reactions?.laugh || 0,
+                wow: memory.reactions?.wow || 0
+              }
+            };
+            next.reactions[reactionKey] += 1;
+            updatedMemory = next;
+            return next;
+          });
+          return { ...prev, memories: nextMemories };
+        });
+
+        if (ownerId && updatedMemory) upsertMemory(ownerId, updatedMemory).catch(() => {});
       },
       addPlan: (title) => {
         const trimmed = title.trim();

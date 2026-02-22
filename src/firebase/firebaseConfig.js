@@ -1,8 +1,7 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getAuth } from "firebase/auth";
-import { initializeAuth, getReactNativePersistence } from "@firebase/auth";
+import { getAuth, initializeAuth, getReactNativePersistence } from "@firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -12,6 +11,10 @@ const firebaseConfig = {
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
+
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+  throw new Error("Missing Firebase env vars. Add EXPO_PUBLIC_FIREBASE_* values to .env and restart Expo with --clear.");
+}
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
